@@ -1,0 +1,67 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('git') {
+            steps {
+                checkout scmGit(branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/regal2t/react-java---devops-.git']])            }
+        }
+        stage('Build and clean') {
+            steps {
+                script {
+                    def mvnHome = tool name: 'maven3', type: 'maven'
+                    sh ''' cd lakeSide-hotel-demo-server-master ${mvnHome}/bin/mvn clean package   ${mvnHome}/bin/mvn clean '''
+                }
+            }
+            
+        }
+        stage('backend-sonarqube-analysis') {
+            steps {
+                script {
+                    def scannerHome = tool name: 'sonarqube', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+                    withEnv(["PATH+SONAR=${scannerHome}/bin"]) {
+                        sh '''sonar-scanner -Dsonar.host.url=http://localhost:9000 -Dsonar.login=sqp_c3124b49ec3f7ae85af663e4db62768d877a8690 -Dsonar.projectKey=javaBackend -Dsonar.projectName=javaBackend -Dsonar.sources=./lakeSide-hotel-demo-server-master -Dsonar.java.binaries=.'''
+                    }
+                }
+            }
+        }
+        stage('frontend-sonarqube-analysis') {
+            steps {
+                script {
+                    def scannerHome = tool name: 'sonarqube', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+                    withEnv(["PATH+SONAR=${scannerHome}/bin"]) {
+                        sh '''sonar-scanner -Dsonar.host.url=http://localhost:9000 -Dsonar.login=sqp_609bd8de976d7a31637847f8c9d6a83abfcc7045 -Dsonar.projectKey=reactFrontend -Dsonar.projectName=reactFrontend -Dsonar.sources=./lakeSide-hotel-demo-client '''
+                    }
+                }
+            }
+        }
+        stage('docker-compose build') {
+            steps {
+                sh 'sudo docker-compose up --build -d'
+            }
+        }
+        stage('view containers') {
+            steps {
+                sh 'sudo docker-compose ps'
+            }
+        }
+    }
+    post {
+        always {
+            // Clean up Docker containers
+            sh 'sudo docker-compose down'
+        }
+        success {
+            // Post-build actions to execute on success
+            slackSend channel: '#jenkins-testing',
+                      color: 'good',
+                      message: "ci-pipeline-sucess-of-react+java-project"
+        }
+        failure {
+            // Post-build actions to execute on failure
+            slackSend channel: '#jenkins-testing',
+                      color: 'danger',
+                      message: "ci-pipeline-failed-of-react+java-project""
+        }
+    }
+}
